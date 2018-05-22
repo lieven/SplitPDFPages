@@ -23,7 +23,29 @@ enum SplitPDFError: Int32, Error {
 	}
 }
 
-func SplitPDF(inputURL: URL, outputURL: URL) throws {
+enum PageOrder: String {
+	case normal
+	case booklet
+}
+
+extension PageOrder {
+	func inputPage(outputPageIndex: Int, totalInputPages: Int) -> (inputPageIndex: Int, first: Bool) {
+		switch self {
+		case .normal:
+			return (inputPageIndex: outputPageIndex/2, first: (outputPageIndex % 2 == 0))
+		case .booklet:
+			let inputPageIndex: Int
+			if outputPageIndex < totalInputPages {
+				inputPageIndex = outputPageIndex
+			} else {
+				inputPageIndex = 2*totalInputPages - outputPageIndex - 1
+			}
+			return (inputPageIndex: inputPageIndex, first: (outputPageIndex % 2) == 1)
+		}
+	}
+}
+
+func SplitPDF(inputURL: URL, outputURL: URL, pageOrder: PageOrder) throws {
 	guard let inputDocument = CGPDFDocument(inputURL as CFURL) else {
 		throw SplitPDFError.invalidInput
 	}
@@ -35,12 +57,7 @@ func SplitPDF(inputURL: URL, outputURL: URL) throws {
 	let inputPages = inputDocument.numberOfPages
 	let outputPages = 2 * inputPages 
 	for i in 0 ..< outputPages {
-		let inputPageIndex: Int
-		if i < inputPages {
-			inputPageIndex = i
-		} else {
-			inputPageIndex = outputPages - i - 1
-		}
+		let (inputPageIndex, first) = pageOrder.inputPage(outputPageIndex: i, totalInputPages: inputPages)
 	
 		guard let page = inputDocument.page(at: inputPageIndex + 1) else {
 			continue
@@ -56,7 +73,7 @@ func SplitPDF(inputURL: URL, outputURL: URL) throws {
 		}
 		
 		pdfContext.beginPage(mediaBox: &outputMediaBox)
-		if i % 2 == 1 {
+		if first {
 			pdfContext.translateBy(x: inputMediaBox.origin.x, y: inputMediaBox.origin.y)
 			pdfContext.drawPDFPage(page)
 		} else {
@@ -85,7 +102,7 @@ if args.count > 2 {
 }
 
 do {
-	try SplitPDF(inputURL: inputURL, outputURL: outputURL)
+	try SplitPDF(inputURL: inputURL, outputURL: outputURL, pageOrder: .booklet)
 } catch let error as SplitPDFError {
 	fputs("\(error.localizedDescription)\n", stderr)
 	exit(error.rawValue)
