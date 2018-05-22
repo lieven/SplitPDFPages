@@ -24,14 +24,14 @@ enum SplitPDFError: Int32, Error {
 }
 
 enum PageOrder: String {
-	case normal
+	case natural
 	case booklet
 }
 
 extension PageOrder {
 	func inputPage(outputPageIndex: Int, totalInputPages: Int) -> (inputPageIndex: Int, first: Bool) {
 		switch self {
-		case .normal:
+		case .natural:
 			return (inputPageIndex: outputPageIndex/2, first: (outputPageIndex % 2 == 0))
 		case .booklet:
 			let inputPageIndex: Int
@@ -86,23 +86,73 @@ func SplitPDF(inputURL: URL, outputURL: URL, pageOrder: PageOrder) throws {
 	pdfContext.closePDF()
 }
 
-let args = CommandLine.arguments
-guard args.count > 1 else {
-	print("Usage: SplitPDF <inputPath> <outputPath>?")
+
+
+struct Arguments {
+	var inputURL: URL
+	var outputURL: URL
+	var pageOrder: PageOrder = .natural
+}
+
+enum Option: String {
+	case order = "-order"
+}
+
+extension Arguments {
+	init?(args: [String]) {
+		var iterator = args.makeIterator()
+		guard iterator.next() != nil else {
+			return nil
+		}
+		
+		var inputPathArg: String?
+		var outputPathArg: String?
+		var pageOrder = PageOrder.natural
+		
+		while let arg = iterator.next() {
+			if arg.starts(with: "-") {
+				guard let option = Option(rawValue: arg) else {
+					return nil
+				}
+				switch option {
+				case .order:
+					guard let orderString = iterator.next(), let order = PageOrder(rawValue: orderString) else {
+						return nil
+					}
+					pageOrder = order
+				}
+			} else if inputPathArg == nil {
+				inputPathArg = arg
+			} else if outputPathArg == nil {
+				outputPathArg = arg
+			}
+		}
+		
+		guard let inputPath = inputPathArg else {
+			return nil
+		}
+		
+		let inputURL = URL(fileURLWithPath: inputPath)
+		let outputURL: URL
+		if let outputPath = outputPathArg {
+			outputURL = URL(fileURLWithPath: outputPath)
+		} else {
+			let baseName = inputURL.deletingPathExtension().lastPathComponent
+			outputURL = inputURL.deletingLastPathComponent().appendingPathComponent(baseName.appending("-split.pdf"))
+		}
+		
+		
+		self.init(inputURL: inputURL, outputURL: outputURL, pageOrder: pageOrder)
+	}
+}
+
+guard let args = Arguments(args: CommandLine.arguments) else {
+	print("Usage: SplitPDF [-order natural|booklet]? <inputPath> <outputPath>?")
 	exit(0)
 }
 
-let inputURL = URL(fileURLWithPath: args[1])	
-let outputURL: URL
-if args.count > 2 {
-	outputURL = URL(fileURLWithPath: args[2])
-} else {
-	let baseName = inputURL.deletingPathExtension().lastPathComponent
-	outputURL = inputURL.deletingLastPathComponent().appendingPathComponent(baseName.appending("-split.pdf"))
-}
-
 do {
-	try SplitPDF(inputURL: inputURL, outputURL: outputURL, pageOrder: .booklet)
+	try SplitPDF(inputURL: args.inputURL, outputURL: args.outputURL, pageOrder: args.pageOrder)
 } catch let error as SplitPDFError {
 	fputs("\(error.localizedDescription)\n", stderr)
 	exit(error.rawValue)
